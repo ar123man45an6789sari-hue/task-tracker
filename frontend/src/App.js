@@ -10,13 +10,12 @@ function App() {
   const [description, setDescription] = useState('');
   const [errors, setErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
+  const [editingTask, setEditingTask] = useState(null);
 
-  // Fetch tasks on component mount
   useEffect(() => {
     fetchTasks();
   }, []);
 
-  // Fetch all tasks
   const fetchTasks = async () => {
     try {
       const response = await axios.get(API_URL);
@@ -26,78 +25,71 @@ function App() {
     }
   };
 
-  // Form Validation
   const validateForm = () => {
     const newErrors = {};
-
-    // Title validation
     if (!title.trim()) {
       newErrors.title = 'Title is required';
     } else if (title.trim().length < 3) {
       newErrors.title = 'Title must be at least 3 characters';
-    } else if (title.trim().length > 50) {
-      newErrors.title = 'Title must be less than 50 characters';
     }
-
-    // Description validation
     if (!description.trim()) {
       newErrors.description = 'Description is required';
     } else if (description.trim().length < 10) {
       newErrors.description = 'Description must be at least 10 characters';
-    } else if (description.trim().length > 200) {
-      newErrors.description = 'Description must be less than 200 characters';
     }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // Clear errors when user types
-  const handleTitleChange = (e) => {
-    setTitle(e.target.value);
-    if (errors.title) {
-      setErrors({ ...errors, title: '' });
-    }
-  };
-
-  const handleDescriptionChange = (e) => {
-    setDescription(e.target.value);
-    if (errors.description) {
-      setErrors({ ...errors, description: '' });
-    }
-  };
-
-  // Add new task
   const addTask = async (e) => {
     e.preventDefault();
-
-    // Validate before submitting
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     try {
-      const newTask = { title: title.trim(), description: description.trim(), status: 'pending' };
-      await axios.post(API_URL, newTask);
+      if (editingTask) {
+        // UPDATE existing task
+        await axios.put(`${API_URL}/${editingTask._id}`, {
+          title: title.trim(),
+          description: description.trim()
+        });
+        setSuccessMessage('Task updated successfully! ✅');
+        setEditingTask(null);
+      } else {
+        // CREATE new task
+        await axios.post(API_URL, {
+          title: title.trim(),
+          description: description.trim(),
+          status: 'pending'
+        });
+        setSuccessMessage('Task added successfully! ✅');
+      }
       
-      // Clear form and show success message
       setTitle('');
       setDescription('');
       setErrors({});
-      setSuccessMessage('Task added successfully! ✅');
-      
-      // Hide success message after 3 seconds
       setTimeout(() => setSuccessMessage(''), 3000);
-      
       fetchTasks();
     } catch (error) {
-      console.error('Error adding task:', error);
-      setSuccessMessage('Error adding task. Please try again.');
-      setTimeout(() => setSuccessMessage(''), 3000);
+      console.error('Error:', error);
     }
   };
 
-  // Delete task
+  // EDIT task - fill form with task data
+  const editTask = (task) => {
+    setEditingTask(task);
+    setTitle(task.title);
+    setDescription(task.description);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Cancel editing
+  const cancelEdit = () => {
+    setEditingTask(null);
+    setTitle('');
+    setDescription('');
+    setErrors({});
+  };
+
   const deleteTask = async (id) => {
     if (window.confirm('Are you sure you want to delete this task?')) {
       try {
@@ -109,13 +101,12 @@ function App() {
     }
   };
 
-  // Update task status
   const updateStatus = async (id, newStatus) => {
     try {
       await axios.put(`${API_URL}/${id}`, { status: newStatus });
       fetchTasks();
     } catch (error) {
-      console.error('Error updating task:', error);
+      console.error('Error updating status:', error);
     }
   };
 
@@ -124,23 +115,19 @@ function App() {
       <div className="container">
         <h1>📋 Task Tracker</h1>
         
-        {/* Success Message */}
         {successMessage && (
-          <div className="success-message">
-            {successMessage}
-          </div>
+          <div className="success-message">{successMessage}</div>
         )}
 
-        {/* Add Task Form */}
         <form onSubmit={addTask} className="task-form">
-          <h2>Add New Task</h2>
+          <h2>{editingTask ? '✏️ Edit Task' : '➕ Add New Task'}</h2>
           
           <div className="form-group">
             <input
               type="text"
               placeholder="Task Title"
               value={title}
-              onChange={handleTitleChange}
+              onChange={(e) => { setTitle(e.target.value); if (errors.title) setErrors({...errors, title: ''}); }}
               className={`input-field ${errors.title ? 'error' : ''}`}
             />
             {errors.title && <span className="error-message">{errors.title}</span>}
@@ -150,19 +137,25 @@ function App() {
             <textarea
               placeholder="Task Description"
               value={description}
-              onChange={handleDescriptionChange}
+              onChange={(e) => { setDescription(e.target.value); if (errors.description) setErrors({...errors, description: ''}); }}
               className={`input-field ${errors.description ? 'error' : ''}`}
               rows="3"
             />
             {errors.description && <span className="error-message">{errors.description}</span>}
           </div>
 
-          <button type="submit" className="btn-primary">
-            Add Task
-          </button>
+          <div className="form-buttons">
+            <button type="submit" className="btn-primary">
+              {editingTask ? 'Update Task' : 'Add Task'}
+            </button>
+            {editingTask && (
+              <button type="button" onClick={cancelEdit} className="btn-cancel">
+                Cancel
+              </button>
+            )}
+          </div>
         </form>
 
-        {/* Tasks List */}
         <div className="tasks-list">
           <h2>Tasks ({tasks.length})</h2>
           {tasks.length === 0 ? (
@@ -172,9 +165,7 @@ function App() {
               <div key={task._id} className={`task-card status-${task.status}`}>
                 <div className="task-header">
                   <h3>{task.title}</h3>
-                  <span className={`status-badge ${task.status}`}>
-                    {task.status}
-                  </span>
+                  <span className={`status-badge ${task.status}`}>{task.status}</span>
                 </div>
                 <p className="task-description">{task.description}</p>
                 <div className="task-actions">
@@ -187,10 +178,10 @@ function App() {
                     <option value="in-progress">In Progress</option>
                     <option value="completed">Completed</option>
                   </select>
-                  <button
-                    onClick={() => deleteTask(task._id)}
-                    className="btn-delete"
-                  >
+                  <button onClick={() => editTask(task)} className="btn-edit">
+                    Edit
+                  </button>
+                  <button onClick={() => deleteTask(task._id)} className="btn-delete">
                     Delete
                   </button>
                 </div>
